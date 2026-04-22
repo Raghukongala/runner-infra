@@ -1,4 +1,7 @@
+output "ecr_url" {
+  value = aws_ecr_repository.repo.repository_url
+}
 
-output "alb_dns" {
-  value = aws_lb.app_alb.dns_name
+output "cluster_name" {
+  value = aws_ecs_cluster.cluster.name
 }
