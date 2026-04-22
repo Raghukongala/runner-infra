@@ -1,75 +1,71 @@
-name: CI-CD to ECS via ECR
+name: Terraform CI/CD (ECS Infra)
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 env:
   AWS_REGION: ap-south-1
-  AWS_ACCOUNT_ID: 957948932374
-  ECR_REPOSITORY: raghu-node-app
-  ECS_CLUSTER: raghu-cluster
-  ECS_SERVICE: raghu-service
-  PATH: /usr/local/bin:/usr/bin:/bin   # ✅ FIXED PATH
+  TF_WORKING_DIR: .
 
 jobs:
 
-  build-and-push:
+  terraform:
     runs-on: self-hosted
 
     steps:
-      - name: Checkout Code
+
+      # 1️⃣ Checkout code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 🔍 Debug AWS CLI (important for troubleshooting)
-      - name: Verify AWS CLI
+      # 2️⃣ Configure AWS credentials
+      - name: Configure AWS Credentials
         run: |
-          which aws
-          aws --version
+          export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+          export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          export AWS_DEFAULT_REGION=$AWS_REGION
           aws sts get-caller-identity
 
-      # 🔐 Login to Amazon ECR
-      - name: Login to Amazon ECR
+      # 3️⃣ Install Terraform (if not installed on runner)
+      - name: Install Terraform
         run: |
-          aws ecr get-login-password --region $AWS_REGION \
-          | docker login --username AWS --password-stdin \
-          $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+          if ! command -v terraform &> /dev/null
+          then
+            sudo apt-get update -y
+            sudo apt-get install -y wget unzip
+            wget https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_linux_amd64.zip
+            unzip terraform_1.6.6_linux_amd64.zip
+            sudo mv terraform /usr/local/bin/
+          fi
+          terraform -version
 
-      # 🐳 Build Docker Image
-      - name: Build Docker Image
+      # 4️⃣ Terraform Init
+      - name: Terraform Init
         run: |
-          docker build -t $ECR_REPOSITORY:${{ github.run_number }} .
+          cd $TF_WORKING_DIR
+          terraform init
 
-      # 🏷 Tag Image
-      - name: Tag Docker Image
+      # 5️⃣ Terraform Validate
+      - name: Terraform Validate
         run: |
-          docker tag $ECR_REPOSITORY:${{ github.run_number }} \
-          $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:${{ github.run_number }}
+          cd $TF_WORKING_DIR
+          terraform validate
 
-      # 📤 Push to ECR
-      - name: Push to ECR
+      # 6️⃣ Terraform Plan
+      - name: Terraform Plan
         run: |
-          docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:${{ github.run_number }}
+          cd $TF_WORKING_DIR
+          terraform plan -out=tfplan
 
-  deploy:
-    needs: build-and-push
-    runs-on: self-hosted
-
-    steps:
-      - name: Verify AWS CLI
+      # 7️⃣ Terraform Apply
+      - name: Terraform Apply
         run: |
-          which aws
-          aws sts get-caller-identity
+          cd $TF_WORKING_DIR
+          terraform apply -auto-approve tfplan
 
-      # 🚀 Deploy to ECS
-      - name: Deploy to ECS
-        run: |
-          aws ecs update-service \
-            --cluster $ECS_CLUSTER \
-            --service $ECS_SERVICE \
-            --force-new-deployment \
-            --region $AWS_REGION
-
-      - name: Success Message
-        run: echo "🚀 Deployment completed successfully to ECS"
+      # 8️⃣ Success message
+      - name: Done
+        run: echo "🚀 Terraform ECS infrastructure deployed successfully"
