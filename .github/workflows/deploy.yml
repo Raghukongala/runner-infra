@@ -1,4 +1,4 @@
-name: Terraform CI/CD (ECS Infra - Production)
+name: Terraform CI/CD (Production ECS Infra)
 
 on:
   push:
@@ -18,14 +18,15 @@ jobs:
         working-directory: ${{ env.TF_DIR }}
 
     steps:
+
       # =========================
-      # 1. Checkout code
+      # 1. Checkout Code
       # =========================
       - name: Checkout Repository
         uses: actions/checkout@v4
 
       # =========================
-      # 2. Verify AWS access (IMPORTANT DEBUG STEP)
+      # 2. Verify AWS Access
       # =========================
       - name: Verify AWS Identity
         run: aws sts get-caller-identity
@@ -45,31 +46,39 @@ jobs:
           terraform -version
 
       # =========================
-      # 4. Terraform Init (backend S3)
+      # 4. Terraform Init (with backend lock)
       # =========================
       - name: Terraform Init
         run: terraform init -reconfigure
 
       # =========================
-      # 5. Terraform Validate
+      # 5. Import existing resources (SAFE MODE)
       # =========================
-      - name: Validate Terraform
+      - name: Import Existing Resources (Ignore errors if already imported)
+        run: |
+          terraform state list | grep ecr || terraform import aws_ecr_repository.repo raghu-node-app || true
+          terraform state list | grep iam || terraform import aws_iam_role.ecs_task_role ecsTaskExecutionRole || true
+
+      # =========================
+      # 6. Validate
+      # =========================
+      - name: Terraform Validate
         run: terraform validate
 
       # =========================
-      # 6. Terraform Plan
+      # 7. Plan
       # =========================
       - name: Terraform Plan
         run: terraform plan
 
       # =========================
-      # 7. Apply Infrastructure
+      # 8. Apply (SAFE + IDPOTENT)
       # =========================
       - name: Terraform Apply
         run: terraform apply -auto-approve
 
       # =========================
-      # 8. Show Created Resources
+      # 9. Show final state
       # =========================
       - name: Show Terraform State
         run: terraform state list
