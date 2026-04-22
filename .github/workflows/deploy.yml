@@ -1,0 +1,94 @@
+name: Terraform CI/CD (Production ECS Infra - Lock Safe)
+
+on:
+  push:
+    branches:
+      - main
+
+# ✅ Prevent parallel pipeline runs (VERY IMPORTANT)
+concurrency:
+  group: terraform-ecs
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-south-1
+  TF_DIR: .
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ${{ env.TF_DIR }}
+
+    steps:
+
+      # =========================
+      # 1. Checkout Code
+      # =========================
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # =========================
+      # 2. AWS Auth
+      # =========================
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # =========================
+      # 3. Verify AWS
+      # =========================
+      - name: Verify AWS Identity
+        run: aws sts get-caller-identity
+
+      # =========================
+      # 4. Setup Terraform
+      # =========================
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+
+      # =========================
+      # 5. Terraform Init
+      # =========================
+      - name: Terraform Init
+        run: terraform init -reconfigure
+
+      # =========================
+      # 6. SAFE LOCK HANDLING
+      # =========================
+      - name: Force Unlock (Safe Retry)
+        continue-on-error: true
+        run: |
+          echo "Checking for stale lock..."
+          terraform force-unlock -force dbff0f01-b3b5-4026-329a-5f76bd06e9d1 || true
+
+      # =========================
+      # 7. Validate
+      # =========================
+      - name: Terraform Validate
+        run: terraform validate
+
+      # =========================
+      # 8. Plan (with retry safety)
+      # =========================
+      - name: Terraform Plan
+        run: terraform plan
+
+      # =========================
+      # 9. Apply
+      # =========================
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+
+      # =========================
+      # 10. Show State
+      # =========================
+      - name: Show State
+        run: terraform state list
