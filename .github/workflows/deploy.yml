@@ -14,48 +14,54 @@ env:
 
 jobs:
 
-# =========================
-# BUILD + PUSH
-# =========================
   build-and-push:
-    runs-on: [self-hosted]
+    runs-on: self-hosted
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials (from EC2 role)
+      # 🔐 AWS AUTH USING GITHUB SECRETS
+      - name: Configure AWS Credentials
         run: |
+          export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+          export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          export AWS_DEFAULT_REGION=$AWS_REGION
           aws sts get-caller-identity
 
-      - name: Login to ECR
+      # 🔧 Fix AWS CLI PATH (important for your runner)
+      - name: Fix PATH
+        run: export PATH=$PATH:/usr/local/bin
+
+      # 🔐 Login to ECR
+      - name: Login to Amazon ECR
         run: |
           aws ecr get-login-password --region $AWS_REGION \
           | docker login --username AWS --password-stdin \
           $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
+      # 🐳 Build Image
       - name: Build Docker Image
         run: |
           docker build -t $ECR_REPOSITORY:${{ github.run_number }} .
 
+      # 🏷 Tag Image
       - name: Tag Image
         run: |
           docker tag $ECR_REPOSITORY:${{ github.run_number }} \
           $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:${{ github.run_number }}
 
-      - name: Push Image
+      # 📤 Push Image
+      - name: Push to ECR
         run: |
           docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:${{ github.run_number }}
 
-# =========================
-# DEPLOY TO ECS
-# =========================
   deploy:
     needs: build-and-push
-    runs-on: [self-hosted]
+    runs-on: self-hosted
 
     steps:
-      - name: Update ECS Service
+      - name: Deploy to ECS
         run: |
           aws ecs update-service \
             --cluster $ECS_CLUSTER \
@@ -63,5 +69,5 @@ jobs:
             --force-new-deployment \
             --region $AWS_REGION
 
-      - name: Deployment Success
+      - name: Success
         run: echo "🚀 Deployment completed successfully"
