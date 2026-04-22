@@ -1,71 +1,75 @@
-name: Terraform CI/CD (ECS Infra)
+name: Terraform CI/CD (ECS Infra - Production)
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
 
 env:
   AWS_REGION: ap-south-1
-  TF_WORKING_DIR: .
+  TF_DIR: .
 
 jobs:
-
   terraform:
     runs-on: self-hosted
 
-    steps:
+    defaults:
+      run:
+        working-directory: ${{ env.TF_DIR }}
 
-      # 1️⃣ Checkout code
+    steps:
+      # =========================
+      # 1. Checkout code
+      # =========================
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2️⃣ Configure AWS credentials
-      - name: Configure AWS Credentials
-        run: |
-          export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
-          export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          export AWS_DEFAULT_REGION=$AWS_REGION
-          aws sts get-caller-identity
+      # =========================
+      # 2. Verify AWS access (IMPORTANT DEBUG STEP)
+      # =========================
+      - name: Verify AWS Identity
+        run: aws sts get-caller-identity
 
-      # 3️⃣ Install Terraform (if not installed on runner)
+      # =========================
+      # 3. Install Terraform
+      # =========================
       - name: Install Terraform
         run: |
-          if ! command -v terraform &> /dev/null
-          then
-            sudo apt-get update -y
-            sudo apt-get install -y wget unzip
-            wget https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_linux_amd64.zip
-            unzip terraform_1.6.6_linux_amd64.zip
-            sudo mv terraform /usr/local/bin/
-          fi
+          sudo apt update -y
+          sudo apt install -y unzip wget
+
+          wget https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_linux_amd64.zip
+          unzip terraform_1.6.6_linux_amd64.zip
+          sudo mv terraform /usr/local/bin/
+
           terraform -version
 
-      # 4️⃣ Terraform Init
+      # =========================
+      # 4. Terraform Init (backend S3)
+      # =========================
       - name: Terraform Init
-        run: |
-          cd $TF_WORKING_DIR
-          terraform init
+        run: terraform init -reconfigure
 
-      # 5️⃣ Terraform Validate
-      - name: Terraform Validate
-        run: |
-          cd $TF_WORKING_DIR
-          terraform validate
+      # =========================
+      # 5. Terraform Validate
+      # =========================
+      - name: Validate Terraform
+        run: terraform validate
 
-      # 6️⃣ Terraform Plan
+      # =========================
+      # 6. Terraform Plan
+      # =========================
       - name: Terraform Plan
-        run: |
-          cd $TF_WORKING_DIR
-          terraform plan -out=tfplan
+        run: terraform plan
 
-      # 7️⃣ Terraform Apply
+      # =========================
+      # 7. Apply Infrastructure
+      # =========================
       - name: Terraform Apply
-        run: |
-          cd $TF_WORKING_DIR
-          terraform apply -auto-approve tfplan
+        run: terraform apply -auto-approve
 
-      # 8️⃣ Success message
-      - name: Done
-        run: echo "🚀 Terraform ECS infrastructure deployed successfully"
+      # =========================
+      # 8. Show Created Resources
+      # =========================
+      - name: Show Terraform State
+        run: terraform state list
