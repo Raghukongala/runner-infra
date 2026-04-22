@@ -7,44 +7,55 @@ on:
 
 env:
   AWS_REGION: ap-south-1
+  AWS_ACCOUNT_ID: 957948932374
   ECR_REPOSITORY: raghu-node-app
   ECS_CLUSTER: raghu-cluster
   ECS_SERVICE: raghu-service
 
 jobs:
 
+# =========================
+# BUILD + PUSH
+# =========================
   build-and-push:
-    runs-on: self-hosted
+    runs-on: [self-hosted]
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Login to Amazon ECR
+      - name: Configure AWS Credentials (from EC2 role)
+        run: |
+          aws sts get-caller-identity
+
+      - name: Login to ECR
         run: |
           aws ecr get-login-password --region $AWS_REGION \
           | docker login --username AWS --password-stdin \
-          957948932374.dkr.ecr.$AWS_REGION.amazonaws.com
+          $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
       - name: Build Docker Image
         run: |
-          docker build -t $ECR_REPOSITORY .
+          docker build -t $ECR_REPOSITORY:${{ github.run_number }} .
 
       - name: Tag Image
         run: |
-          docker tag $ECR_REPOSITORY:latest \
-          957948932374.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
+          docker tag $ECR_REPOSITORY:${{ github.run_number }} \
+          $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:${{ github.run_number }}
 
-      - name: Push to ECR
+      - name: Push Image
         run: |
-          docker push 957948932374.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
+          docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:${{ github.run_number }}
 
+# =========================
+# DEPLOY TO ECS
+# =========================
   deploy:
     needs: build-and-push
-    runs-on: self-hosted
+    runs-on: [self-hosted]
 
     steps:
-      - name: Deploy to ECS (force new deployment)
+      - name: Update ECS Service
         run: |
           aws ecs update-service \
             --cluster $ECS_CLUSTER \
@@ -52,5 +63,5 @@ jobs:
             --force-new-deployment \
             --region $AWS_REGION
 
-      - name: Success Message
-        run: echo "🚀 Deployment completed to ECS"
+      - name: Deployment Success
+        run: echo "🚀 Deployment completed successfully"
