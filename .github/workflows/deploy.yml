@@ -21,17 +21,14 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 🔐 AWS AUTH USING GITHUB SECRETS
+      # ✅ FIX AWS CLI PATH (PERMANENT FOR ALL STEPS)
+      - name: Set AWS CLI PATH
+        run: echo "PATH=$PATH:/usr/local/bin" >> $GITHUB_ENV
+
+      # 🔐 Configure AWS credentials properly
       - name: Configure AWS Credentials
         run: |
-          export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
-          export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          export AWS_DEFAULT_REGION=$AWS_REGION
           aws sts get-caller-identity
-
-      # 🔧 Fix AWS CLI PATH (important for your runner)
-      - name: Fix PATH
-        run: export PATH=$PATH:/usr/local/bin
 
       # 🔐 Login to ECR
       - name: Login to Amazon ECR
@@ -61,6 +58,9 @@ jobs:
     runs-on: self-hosted
 
     steps:
+      - name: Set AWS CLI PATH
+        run: echo "PATH=$PATH:/usr/local/bin" >> $GITHUB_ENV
+
       - name: Deploy to ECS
         run: |
           aws ecs update-service \
@@ -69,5 +69,5 @@ jobs:
             --force-new-deployment \
             --region $AWS_REGION
 
-      - name: Success
+      - name: Success Message
         run: echo "🚀 Deployment completed successfully"
